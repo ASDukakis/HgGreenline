@@ -110,6 +110,7 @@ void zeroing(){
         motorstate = states::IDLE;
       }
       break;
+      ZeroTimeout.reset();
     case 3:
       if((stepper.getMotorState() == 0) && (upstop == true)){
         stepper.setMaxVelocity(100);
