@@ -23,7 +23,7 @@ bool botLED = false;
 bool movingup = true;   //0 for downward, 1 for upward
 
 MilliTimer DebounceTimer(25);
-MilliTimer ZeroTimeout(100);
+MilliTimer ZeroTimeout(5000);
 
 enum class states{
   IDLE,
@@ -98,13 +98,16 @@ void zeroing(){
       zStep++;
       break;
     case 2:
-      if(upstop == false){
+      if(upstop == false && ZeroTimeout.timedOut(false)){
         // make motor start moving 500 steps downwards
         stepper.moveSteps(500, CCW, 0);
         zStep++;
       }
-      else if(motorstate == states::IDLE){        //in case user stops during zeroing process
+      else if(ZeroTimeout.timedOut(true)){        //in case user stops during zeroing process         //need to find correct place to reset the zero timeout timer
+        stepper.hardStop(SOFT);
+        stepper.setMaxVelocity(velocity);
         zStep = 1;
+        motorstate = states::IDLE;
       }
       break;
     case 3:
@@ -321,4 +324,3 @@ void checkSerial(){
 //          motorstate == states::IDLE;
 //        }
 //      }
-
