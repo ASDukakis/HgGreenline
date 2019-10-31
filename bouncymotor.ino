@@ -172,35 +172,67 @@ void checkSerial(){
       motorstate = states::IDLE;
     }
     else if(sc.contains("sv")){ // set speed
-      if(sc.toInt16() > 0 && sc.toInt16() < 3000){
-        velocity = sc.toInt16(); 
-        stepper.setMaxVelocity(velocity);
-        Serial.print("Speed has been set to: ");
-        Serial.println(velocity);
+      if(motorstate != states::ZEROING){
+        if(sc.toInt16() > 0 && sc.toInt16() < 3000){
+          velocity = sc.toInt16(); 
+          stepper.setMaxVelocity(velocity);
+          Serial.print("Speed has been set to: ");
+          Serial.println(velocity);
+        }
+        else{
+          Serial.println("Could not set speed to input value");
+        }
       }
-      else{
-        Serial.println("Could not set speed to input value");
+      else if(motorstate == states::ZEROING){
+        Serial.println("Please do not change speed during zeroing!");
       }
     }
     else if(sc.contains("vu")){ // set up (nudge up) the velocity
+      if(motorstate != states::ZEROING){
         if(velocity >= maxvelocity){
           Serial.println("Max velocity reached");        
         }
         else{
           stepper.setMaxVelocity(velocity += 100);
         }
+      }
+      else if(motorstate == states::ZEROING){
+        Serial.println("Please do not change speed during zeroing!");
+      }
     }
     else if(sc.contains("vd")){ // set down (nudge down) the velocity
+      if(motorstate != states::ZEROING){
         if(velocity <= 100){
           Serial.println("Min velocity reached");        
         }
         else{
           stepper.setMaxVelocity(velocity += -100);
         }   
+      }
+      else if(motorstate == states::ZEROING){
+        Serial.println("Please do not change speed during zeroing!");
+      }
+    }
+    else if(sc.contains("gm")){ // get mode 
+      Serial.print("Bouncymotor status is currently: ");
+      if(motorstate == states::MOVING){
+        Serial.println("controlled motion");
+      }
+      else if(motorstate == states::ZEROING){
+        Serial.println("zeroing");
+      }
+      else if(motorstate == states::IDLE){
+        Serial.println("idle and awaiting instruction o7");
+      }
     }
     else if(sc.contains("gv")){ // get velocity 
+      if(motorstate == states::ZEROING){
+        Serial.println("Current velocity could not be obtained as Bouncymotor is zeroing.");
+      }
+      else{
         Serial.print("Current velocity is set to: ");
         Serial.println(velocity);
+      }
     }
     else if(sc.contains("gp")){ // get position
       angle = stepper.encoder.getAngleMoved();
