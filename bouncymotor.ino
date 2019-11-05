@@ -1,15 +1,12 @@
-#include <uStepper.h>
+#include <uStepperS.h>
 #include "SerialChecker.h"
 #include "MilliTimer.h"
 
-#define MAXACCELERATION 1500         //Max acceleration = 1500 Steps/s^2
-#define MAXVELOCITY 1000           //Max velocity = 1000 steps/s
-
 SerialChecker sc;
 
-uStepper stepper(MAXACCELERATION, MAXVELOCITY);
+uStepperS stepper;
 uint32_t tOld = millis();
-float velocity = 1000;
+float velocity = 100;
 float maxvelocity = 3000;
 float angle = 0;
 float distance = 0;
@@ -38,6 +35,9 @@ void setup() {
   sc.setMsgMinLen(1);
   // put your setup code here, to run once:
   stepper.setup();
+  stepper.setMaxAcceleration(2000);
+  stepper.setMaxVelocity(100);
+  
   //Serial.begin(250000);
   pinMode(2, INPUT_PULLUP);
   pinMode(3, INPUT_PULLUP);
@@ -71,7 +71,7 @@ void printDiagnostics(){
   if(t - tOld >= 250){
     tOld = t;
 //    Serial.print(digitalRead(2));
-//   Serial.print(" ");
+//    Serial.print(" ");
 //    Serial.println(digitalRead(3));
 //    Serial.print("Pos: ");
 //    Serial.println(stepper.encoder.getAngle());
@@ -88,16 +88,16 @@ void zeroing(){
     zStep = 1;
   }
   upstop = digitalRead(2);
-  Serial.print(upstop);
-  Serial.print(", ");
-  Serial.print(zStep);
-  Serial.print(", ");
-  Serial.println(ZeroTimeout.timedOut());
+//  Serial.print(upstop);
+//  Serial.print(", ");
+//  Serial.print(zStep);
+//  Serial.print(", ");
+//  Serial.println(ZeroTimeout.timedOut());
   switch(zStep){
     case 1:
       // check we haven't already hit the endstop
       if(upstop == true){
-        stepper.setMaxVelocity(maxvelocity);
+        stepper.driver.setVelocity(maxvelocity);
         stepper.runContinous(CW);
       }
       zStep++;
@@ -105,14 +105,14 @@ void zeroing(){
     case 2:
       if(upstop == false){
         // make motor start moving 500 steps downwards
-        stepper.moveSteps(500, CCW, 0);
+        stepper.moveSteps(-500);
         ZeroTimeout.reset();
         zStep++;
       }
       break;
     case 3:
       if((stepper.getMotorState() == 0) && (upstop == true)){
-        stepper.setMaxVelocity(100);
+        stepper.driver.setVelocity(100);
         stepper.runContinous(CW);
         ZeroTimeout.reset();
         zStep++;      
@@ -120,7 +120,7 @@ void zeroing(){
       break;
     case 4:
       if(upstop == false){
-        stepper.setMaxVelocity(velocity);
+        stepper.driver.setVelocity(velocity);
         stepper.encoder.setHome();
         ZeroTimeout.reset();
         zStep = 1;
@@ -134,8 +134,8 @@ void zeroing(){
 
 void stopMotorTop(){
   if(DebounceTimer.timedOut(true)){
-    if(stepper.getCurrentDirection() == 0){
-      stepper.hardStop(SOFT);
+    if(dir == 1){
+      stepper.stop(HARD);
       topLED = true;
       if(motorstate == states::MOVING){
         motorstate = states::IDLE;
@@ -148,8 +148,8 @@ void stopMotorTop(){
 
 void stopMotorBot(){
   if(DebounceTimer.timedOut(true)){
-    if(stepper.getCurrentDirection() == 1){
-      stepper.hardStop(SOFT);
+    if(dir == 1){
+      stepper.stop(HARD);
       botLED = true;     //change to digitalwrite later?
       if(motorstate == states::MOVING){
         motorstate = states::IDLE;
@@ -166,16 +166,16 @@ void checkSerial(){
       Serial.println("BM");
     }
     else if(sc.contains("0")){  // stop
-      stepper.hardStop(SOFT);
-      stepper.setMaxVelocity(velocity);
+      stepper.stop(HARD);
       Serial.println("Motor Stopped");
       motorstate = states::IDLE;
+      stepper.driver.setVelocity(velocity);
     }
     else if(sc.contains("sv")){ // set speed
       if(motorstate != states::ZEROING){
         if(sc.toInt16() > 0 && sc.toInt16() < 3000){
           velocity = sc.toInt16(); 
-          stepper.setMaxVelocity(velocity);
+          stepper.driver.setVelocity(velocity);
           Serial.print("Speed has been set to: ");
           Serial.println(velocity);
         }
@@ -193,7 +193,7 @@ void checkSerial(){
           Serial.println("Max velocity reached");        
         }
         else{
-          stepper.setMaxVelocity(velocity += 100);
+          stepper.driver.setVelocity(velocity += 100);
         }
       }
       else if(motorstate == states::ZEROING){
@@ -206,7 +206,7 @@ void checkSerial(){
           Serial.println("Min velocity reached");        
         }
         else{
-          stepper.setMaxVelocity(velocity += -100);
+          stepper.driver.setVelocity(velocity += -100);
         }   
       }
       else if(motorstate == states::ZEROING){
@@ -247,7 +247,7 @@ void checkSerial(){
       Serial.println("Zeroing...");
     }
     else if(sc.contains("k")){  // toggle run/stop
-      stepper.setMaxVelocity(velocity);
+      stepper.driver.setVelocity(velocity);
       upstop = digitalRead(2);
       if(motorstate == states::IDLE){
         //if topstop hit and td = up OR if botstop hit and td = down, print NO, else...
@@ -264,7 +264,7 @@ void checkSerial(){
         }
       }
       else if(motorstate == states::MOVING || motorstate == states::ZEROING){
-        stepper.hardStop(SOFT);
+        stepper.stop(HARD);
         motorstate = states::IDLE;
       }
     }
@@ -278,7 +278,7 @@ void checkSerial(){
         Serial.println("up");
       }
       if(motorstate == states::MOVING){
-        stepper.hardStop(SOFT);
+        stepper.stop(HARD);
         stepper.runContinous(dir);
       }
     }
@@ -287,7 +287,7 @@ void checkSerial(){
         dir = 0;
         Serial.println("Direction set to: up");
         if(motorstate == states::MOVING){
-          stepper.hardStop(SOFT);
+          stepper.stop(HARD);
           stepper.runContinous(dir);
         }
       }
@@ -300,7 +300,7 @@ void checkSerial(){
         dir = 1;
         Serial.println("Direction set to: down");
         if(motorstate == states::MOVING){
-          stepper.hardStop(SOFT);
+          stepper.stop(HARD);
           stepper.runContinous(dir);
         }
       }
@@ -310,85 +310,3 @@ void checkSerial(){
     }
   }
 }
-
-//void checkSerial(){
-//  char cmd;
-//  // put your main code here, to run repeatedly:
-//  while(Serial.available()){
-//      Serial.println("o7");
-//      cmd = Serial.read();
-//      if(cmd == '1')                      //Run continous clockwise/up
-//      {
-//        motorstate = states::MOVING;
-//        stepper.runContinous(dir);
-//      }
-//      
-//      else if(cmd == '2')                 //Run continous counter clockwise/down
-//      {
-//        stepper.runContinous(CCW);
-//      }
-//      
-//      else if(cmd == '3')                 //Stop without deceleration and don't block motor
-//      {
-//        stepper.hardStop(SOFT);
-//      }
-//
-//      else if(cmd == '4')                 //speed up
-//      {
-//        if(velocity >= maxvelocity){
-//          Serial.println("Max velocity reached");        
-//        }
-//        else{
-//          stepper.setMaxVelocity(velocity += 100);
-//          }
-//      }
-//
-//      else if(cmd == '5')               //slow down
-//      {
-//        if(velocity <= 100){
-//          Serial.println("Min velocity reached");        
-//        }
-//        else{
-//          stepper.setMaxVelocity(velocity += -100);
-//          }        
-//      }
-//
-//      else if(cmd == '6')
-//      {
-//        Serial.print("Current Velocity: ");
-//        Serial.println(stepper.getMaxVelocity());        
-//      }
-//
-//      else if(cmd == '7')                
-//      {
-//        angle = stepper.encoder.getAngleMoved();
-//        distance = angle*8/360;
-//        Serial.print("Angle: ");
-//        Serial.println(angle);
-//        Serial.print("Distance: ");
-//        Serial.println(distance);     
-//      }
-//      
-//      else if(cmd == '8'){
-//        dir != dir;
-//      }
-//
-//      else if(cmd == '0'){
-//        motorstate = states::ZEROING;
-//        Serial.println("Zeroing...");
-//      }
-//  }
-//}
-
-
-//if(cmd == '1')                      //Toggle Move/Stop
-//      {
-//        if(motorstate == states::IDLE){
-//          motorstate = states::MOVING;
-//          stepper.runContinous(dir);
-//        }
-//        else if(motorstate == states::MOVING || motorstate == states::ZEROING){
-//          stepper.hardStop(SOFT);
-//          motorstate == states::IDLE;
-//        }
-//      }
