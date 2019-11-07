@@ -7,20 +7,23 @@ SerialChecker sc;
 uStepperS stepper;
 uint32_t tOld = millis();
 float velocity = 100;
-float maxvelocity = 3000;
+float maxvelocity = 300;
 float angle = 0;
 float distance = 0;
 
 bool upstop = true;
+bool upstopOld = true;
 bool downstop = true;
+bool downstopOld = true;
 
 bool topLED = false;
 bool botLED = false;
 
-bool dir = false;   //0 for upward, 1 for downward
+bool direc = false;   //0 for upward, 1 for downward
+bool direcOld = false;
 
 MilliTimer DebounceTimer(25);
-MilliTimer ZeroTimeout(20000);
+MilliTimer ZeroTimeout(15000);
 
 enum class states{
   IDLE,
@@ -29,6 +32,8 @@ enum class states{
 };
 
 states motorstate = states::IDLE;
+
+void zeroing(bool reset = false); // function prototype. Function defined below.
 
 void setup() {
   sc.init();
@@ -39,21 +44,27 @@ void setup() {
   stepper.setMaxVelocity(100);
   
   //Serial.begin(250000);
-  pinMode(2, INPUT_PULLUP);
-  pinMode(3, INPUT_PULLUP);
+//  pinMode(2, INPUT_PULLUP);
+//  pinMode(3, INPUT_PULLUP);
 
-  attachInterrupt(digitalPinToInterrupt(2), stopMotorTop, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(3), stopMotorBot, CHANGE);  
+//  attachInterrupt(digitalPinToInterrupt(7), stopMotorTop, CHANGE);
+//  attachInterrupt(digitalPinToInterrupt(8), stopMotorBot, CHANGE);  
   Serial.println("Connected to bouncymotor.ino");
 }
 
 void loop() {
+  checkEndStops();
+  
   checkSerial();
   printDiagnostics();
-  
+//  if(!upstop){
+//    Serial.println("Upstop hit.");
+//    upstop = true;
+//  }
 
   switch(motorstate){
     case states::IDLE:
+    
       // do nothing
       break;
     case states::ZEROING:
@@ -64,6 +75,25 @@ void loop() {
       break;
   }
 
+}
+
+void checkEndStops(){
+  if(DebounceTimer.timedOut(true)){
+    DebounceTimer.reset();
+
+    upstop = digitalRead(7);
+    downstop = digitalRead(8);
+    
+    if(upstop != upstopOld){
+      stopMotorTop();
+    }
+    upstopOld = upstop;
+ 
+    if(downstop != downstopOld){
+      stopMotorBot();
+    }
+    downstopOld = downstop;
+  }
 }
 
 void printDiagnostics(){
@@ -78,52 +108,63 @@ void printDiagnostics(){
   }
 }
 
-void zeroing(){
-  // 1. If off the endstop, move up at speed X = 3000
-  // 2. Check for endstop hit. If true, Move down 500 steps.
-  // 3. If moved off the endstop and stopped, move up at speed X = 100 until top end stop hit.
+void zeroing(bool reset = false){
+  // 1. If off the endstop, move up at speed X = maxvelocity
+  // 2. Check for endstop hit. If true, Move down some steps.
+  // 3. If moved off the endstop and stopped, move up at speed X = __ until top end stop hit.
   // 4. Zero the motor position counter.
   static uint8_t zStep = 1;
   if(ZeroTimeout.timedOut(true)){
     zStep = 1;
+    direc = direcOld;
   }
-  upstop = digitalRead(2);
+  if(reset){
+    zStep = 1;
+  }
+  
+  upstop = digitalRead(7);
 //  Serial.print(upstop);
 //  Serial.print(", ");
 //  Serial.print(zStep);
 //  Serial.print(", ");
 //  Serial.println(ZeroTimeout.timedOut());
+  
   switch(zStep){
     case 1:
       // check we haven't already hit the endstop
       if(upstop == true){
-        stepper.driver.setVelocity(maxvelocity);
-        stepper.runContinous(CW);
+        direc = 0;
+        stepper.setMaxVelocity(maxvelocity);
+        stepper.runContinous(0);
       }
       zStep++;
       break;
     case 2:
       if(upstop == false){
+        direc = 1;
         // make motor start moving 500 steps downwards
-        stepper.moveSteps(-500);
+        stepper.setMaxVelocity(50);
+        stepper.moveSteps(12000);
         ZeroTimeout.reset();
         zStep++;
       }
       break;
     case 3:
       if((stepper.getMotorState() == 0) && (upstop == true)){
-        stepper.driver.setVelocity(100);
-        stepper.runContinous(CW);
+        direc = 0;
+        stepper.setMaxVelocity(25);
+        stepper.moveSteps(-20000);
         ZeroTimeout.reset();
         zStep++;      
       }
       break;
     case 4:
       if(upstop == false){
-        stepper.driver.setVelocity(velocity);
+        stepper.stop(HARD);
         stepper.encoder.setHome();
         ZeroTimeout.reset();
         zStep = 1;
+        direc = 1;
         motorstate = states::IDLE;
         Serial.println("Zeroing complete.");
       }
@@ -133,31 +174,26 @@ void zeroing(){
 }
 
 void stopMotorTop(){
-  if(DebounceTimer.timedOut(true)){
-    if(dir == 1){
-      stepper.stop(HARD);
-      topLED = true;
-      if(motorstate == states::MOVING){
-        motorstate = states::IDLE;
-      }
+  if(direc == 0){
+    stepper.stop(HARD);
+    topLED = true;
+    if(motorstate == states::MOVING){
+      motorstate = states::IDLE;
     }
-    topLED = false;
-    DebounceTimer.reset();
   }
+  topLED = false;
 }
 
+
 void stopMotorBot(){
-  if(DebounceTimer.timedOut(true)){
-    if(dir == 1){
-      stepper.stop(HARD);
-      botLED = true;     //change to digitalwrite later?
-      if(motorstate == states::MOVING){
-        motorstate = states::IDLE;
-      }
+  if(direc == 1){
+    stepper.stop(HARD);
+    botLED = true;     //change to digitalwrite later?
+    if(motorstate == states::MOVING){
+      motorstate = states::IDLE;
     }
-    botLED = false;
-    DebounceTimer.reset();
   }
+  botLED = false;
 }
 
 void checkSerial(){
@@ -167,15 +203,20 @@ void checkSerial(){
     }
     else if(sc.contains("0")){  // stop
       stepper.stop(HARD);
+      if(motorstate == states::ZEROING){
+        direc = direcOld;
+        }
+//      stepper.moveSteps(15000);
       Serial.println("Motor Stopped");
       motorstate = states::IDLE;
-      stepper.driver.setVelocity(velocity);
     }
     else if(sc.contains("sv")){ // set speed
       if(motorstate != states::ZEROING){
-        if(sc.toInt16() > 0 && sc.toInt16() < 3000){
+        if(sc.toInt16() >= 25 && sc.toInt16() <= maxvelocity){
           velocity = sc.toInt16(); 
-          stepper.driver.setVelocity(velocity);
+          if(motorstate == states::MOVING){
+            stepper.setMaxVelocity(velocity);
+          }
           Serial.print("Speed has been set to: ");
           Serial.println(velocity);
         }
@@ -193,7 +234,10 @@ void checkSerial(){
           Serial.println("Max velocity reached");        
         }
         else{
-          stepper.driver.setVelocity(velocity += 100);
+          velocity += 25;
+          if(motorstate == states::MOVING){
+            stepper.setMaxVelocity(velocity);
+          }
         }
       }
       else if(motorstate == states::ZEROING){
@@ -202,11 +246,14 @@ void checkSerial(){
     }
     else if(sc.contains("vd")){ // set down (nudge down) the velocity
       if(motorstate != states::ZEROING){
-        if(velocity <= 100){
+        if(velocity <= 25){
           Serial.println("Min velocity reached");        
         }
         else{
-          stepper.driver.setVelocity(velocity += -100);
+          velocity += -25;
+          if(motorstate == states::MOVING){
+            stepper.setMaxVelocity(velocity);
+          }
         }   
       }
       else if(motorstate == states::ZEROING){
@@ -241,37 +288,44 @@ void checkSerial(){
       Serial.println(angle);
       Serial.print("Distance: ");
       Serial.println(distance);  
+      Serial.print("Microstep: ");
+      Serial.println(stepper.driver.getPosition());
     }
     else if(sc.contains("ze")){ // zero the stage to top microswitch
+      direcOld = direc;
+      zeroing(true);
       motorstate = states::ZEROING;
       Serial.println("Zeroing...");
     }
     else if(sc.contains("k")){  // toggle run/stop
-      stepper.driver.setVelocity(velocity);
-      upstop = digitalRead(2);
+//      upstop = digitalRead(7);
       if(motorstate == states::IDLE){
         //if topstop hit and td = up OR if botstop hit and td = down, print NO, else...
-        if(upstop == 0 && dir == false){
+        if(upstop == 0 && direc == false){
           Serial.println("Please change direction before moving!");
         }
-        else if(downstop == 0 && dir == true){
+        else if(downstop == 0 && direc == true){
           Serial.println("Please change direction before moving!");
         }
         else{
           motorstate = states::MOVING;
-          stepper.runContinous(dir);
-          //Serial.println(dir);
+          stepper.setMaxVelocity(velocity);
+          stepper.runContinous(direc);
+          //Serial.println(direc);
         }
       }
       else if(motorstate == states::MOVING || motorstate == states::ZEROING){
+        if(motorstate == states::ZEROING){
+          direc = direcOld;
+          }
         stepper.stop(HARD);
         motorstate = states::IDLE;
       }
     }
     else if(sc.contains("td")){ // toggle direction
-      dir = !dir;
-      Serial.print("Direction set to: ");
-      if(dir == true){
+      direc = !direc;
+      Serial.print("direction set to: ");
+      if(direc == true){
         Serial.println("down"); 
       }
       else{
@@ -279,32 +333,32 @@ void checkSerial(){
       }
       if(motorstate == states::MOVING){
         stepper.stop(HARD);
-        stepper.runContinous(dir);
+        stepper.runContinous(direc);
       }
     }
-    else if(sc.contains("su")){ // set dir to up
-      if(dir == 1){
-        dir = 0;
-        Serial.println("Direction set to: up");
+    else if(sc.contains("su")){ // set direc to up
+      if(direc == 1){
+        direc = 0;
+        Serial.println("direction set to: up");
         if(motorstate == states::MOVING){
           stepper.stop(HARD);
-          stepper.runContinous(dir);
+          stepper.runContinous(direc);
         }
       }
-      else if(dir == 0){
+      else if(direc == 0){
         Serial.println("Already moving upward.");
       }
     }
-    else if(sc.contains("sd")){ // set dir to down
-      if(dir == 0){
-        dir = 1;
-        Serial.println("Direction set to: down");
+    else if(sc.contains("sd")){ // set direc to down
+      if(direc == 0){
+        direc = 1;
+        Serial.println("direction set to: down");
         if(motorstate == states::MOVING){
           stepper.stop(HARD);
-          stepper.runContinous(dir);
+          stepper.runContinous(direc);
         }
       }
-      else if(dir == 1){
+      else if(direc == 1){
         Serial.println("Already moving downward.");
       }
     }
