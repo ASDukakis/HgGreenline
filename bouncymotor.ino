@@ -72,6 +72,10 @@ void loop() {
       break;
     case states::MOVING:
       // photodiode scan function
+      if(stepper.getMotorState() == 0){
+        motorstate = states::IDLE;
+        Serial.println("boncymotor returned to idle");
+      }
       break;
   }
 
@@ -360,6 +364,15 @@ void checkSerial(){
       }
       else if(direc == 1){
         Serial.println("Already moving downward.");
+      }
+    }
+    else if(sc.contains("ms")){
+      motorstate = states::MOVING;
+      if(direc == 0){
+        stepper.moveSteps(-51200);
+      }
+      else if(direc == 1){
+        stepper.moveSteps(51200);
       }
     }
   }
