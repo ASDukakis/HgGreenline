@@ -83,6 +83,14 @@ void loop() {
         motorstate = states::IDLE;
         scpc.println("bouncymotor returned to idle");
         scesp.println("bouncymotor returned to idle");
+        scpc.print("Angle: ");
+        scesp.print("Angle: ");
+        scpc.println(stepper.encoder.getAngle());
+        scesp.println(stepper.encoder.getAngle());
+        scpc.print("Microsteps: ");
+        scesp.print("Microsteps: ");
+        scpc.println(stepper.driver.getPosition());
+        scesp.println(stepper.driver.getPosition());
       }
       break;
   }
