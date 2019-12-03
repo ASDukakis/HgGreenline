@@ -85,8 +85,8 @@ void loop() {
         scesp.println("bouncymotor returned to idle");
         scpc.print("Angle: ");
         scesp.print("Angle: ");
-        scpc.println(stepper.encoder.getAngle());
-        scesp.println(stepper.encoder.getAngle());
+        scpc.println(stepper.encoder.getAngleMoved());
+        scesp.println(stepper.encoder.getAngleMoved());
         scpc.print("Microsteps: ");
         scesp.print("Microsteps: ");
         scpc.println(stepper.driver.getPosition());
@@ -230,7 +230,7 @@ void stopMotorBot(){
 
 void checkSerialPC(){
   if(scpc.check()){
-    if     (scpc.contains("id")){ // get id
+    if(scpc.contains("id")){ // get id
       scpc.println("BM");
     }
     else if(scpc.contains("0")){  // stop
